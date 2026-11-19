@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Interactive Tooth</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui;color:#162b38;background:transparent}main{max-width:780px;margin:auto;position:relative}canvas{width:100%;height:clamp(300px,68vh,620px);display:block;touch-action:none;cursor:grab;outline-offset:-5px}canvas:active{cursor:grabbing}.controls{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;padding:8px 12px 15px}button{font:inherit;font-weight:650;padding:9px 14px;border:1px solid #c9dbdf;border-radius:20px;background:#fff;color:#162b38;cursor:pointer}button[aria-pressed=true]{background:#087d77;border-color:#087d77;color:white}p{text-align:center;margin:0 0 8px;font-size:13px;color:#455e68}
+
+/* Embedded mode inside Dental Website Hero Studio */
+body.is-embedded {
+  overflow: hidden;
+  height: 100vh;
+}
+body.is-embedded main {
+  max-width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+body.is-embedded canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+}
+body.is-embedded .controls,
+body.is-embedded #hint {
+  display: none !important;
+}
+</style>
+<main>
+<canvas tabindex="0" aria-label="Interactive 3D tooth. Drag or use the arrow keys to rotate."></canvas>
+<p id="hint">Drag to rotate · Arrow keys also work</p>
+<div class="controls" aria-label="Tooth viewer controls">
+<button data-mode="1" aria-pressed="true">💎 Real Anatomical</button>
+<button data-mode="2" aria-pressed="false">🔬 Cutaway Strata</button>
+<button data-mode="3" aria-pressed="false">✨ 24K Kintsugi</button>
+<button data-mode="0" aria-pressed="false">😊 Mascot</button>
+<button id="orbit" aria-pressed="false">Auto-orbit</button>
+<button id="reset">Reset view</button>
+</div>
+</main>
+<script>
+const canvas=document.querySelector('canvas'), gl=canvas.getContext('webgl',{alpha:true,antialias:true});
+if(!gl){document.querySelector('#hint').textContent='This viewer requires WebGL.';throw Error('WebGL unavailable');}
+const vertex=`
+attribute vec3 position,normal;
+uniform vec2 angles,scale;
+varying vec3 point,n;
+vec3 rotate(vec3 p){
+ float c=cos(angles.x),s=sin(angles.x),d=cos(angles.y),e=sin(angles.y);
+ p=vec3(c*p.x+s*p.z,p.y,c*p.z-s*p.x);
+ return vec3(p.x,d*p.y-e*p.z,e*p.y+d*p.z);
+}
+void main(){point=position;n=rotate(normal);vec3 p=rotate(position);gl_Position=vec4(p.xy*scale,-p.z*.5,1.);}
+`;
+const fragment=`
+precision mediump float;
+varying vec3 point,n;
+uniform sampler2D art;
+uniform int mode;
+void main(){
+ vec3 N=normalize(n), L=normalize(vec3(-.45,.65,1.));
+ float diffuse=max(dot(N,L),0.);
+ float shine=pow(max(dot(N,normalize(L+vec3(0.,0.,1.))),0.),45.);
+ float rim=pow(1.-max(N.z,0.),2.);
+ vec3 color=vec3(.93,.96,.99)*(.68+.29*diffuse)+.28*shine+.05*rim;
+
+ if(point.z > -0.15){
+   vec2 uv = vec2((point.x+1.25)/2.5, (1.25-point.y)/2.5);
+   uv.x = clamp(uv.x, 0.0, 1.0);
+   uv.y = clamp(uv.y, 0.0, 1.0);
+
+   float slice = float(mode);
+   vec2 texCoord = vec2(uv.x, (uv.y + slice) * 0.25);
+   vec4 mark = texture2D(art, texCoord);
+
+   if(mode == 0){
+     color = mix(color, mark.rgb*(.79+.21*diffuse), mark.a*smoothstep(.04,.15,point.z));
+   } else if(mode == 1){
+     vec3 shaded = mark.rgb * (.72 + .35 * diffuse) + .32 * shine + vec3(0.04, 0.06, 0.06) * rim;
+     color = mix(color, shaded, mark.a * smoothstep(-0.05, 0.12, point.z));
+   } else if(mode == 2){
+     vec3 shaded = mark.rgb * (.88 + .22 * diffuse) + .18 * shine;
+     color = mix(color, shaded, mark.a * smoothstep(-0.05, 0.12, point.z));
+   } else if(mode == 3){
+     vec3 shaded = mark.rgb * (.80 + .30 * diffuse) + .48 * shine * vec3(1.0, 0.85, 0.35);
+     color = mix(color, shaded, mark.a * smoothstep(-0.05, 0.12, point.z));
+   }
+ }
+ gl_FragColor=vec4(color,1.);
+}
+`;
+const program=gl.createProgram();
+for(const [kind,source] of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){
+ const shader=gl.createShader(kind);gl.shaderSource(shader,source);gl.compileShader(shader);
+ if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));
+ gl.attachShader(program,shader);
+}
+gl.linkProgram(program);gl.useProgram(program);
+const outline=[[0,.91]],segments=[
+ [.20,.90,.34,1.08,.56,1.02],[.82,.97,.94,.72,.89,.39],[.87,.14,.72,-.11,.68,-.38],
+ [.64,-.61,.59,-1.02,.43,-1.10],[.22,-1.21,.25,-.59,.10,-.44],[.03,-.35,-.03,-.35,-.10,-.44],
+ [-.25,-.59,-.22,-1.21,-.43,-1.10],[-.59,-1.02,-.64,-.61,-.68,-.38],[-.72,-.11,-.87,.14,-.89,.39],
+ [-.94,.72,-.82,.97,-.56,1.02],[-.34,1.08,-.20,.90,0,.91]];
+for(const [ax,ay,bx,by,cx,cy] of segments){
+ const [x,y]=outline.at(-1);
+ for(let i=1;i<=14;i++){const t=i/14,u=1-t;outline.push([u**3*x+3*u*u*t*ax+3*u*t*t*bx+t**3*cx,u**3*y+3*u*u*t*ay+3*u*t*t*by+t**3*cy]);}
+}
+const step=.032, start=-1.248, width=79, depth=33, zstart=-.512;
+const section=new Float32Array(width*width);
+for(let j=0;j<width;j++)for(let i=0;i<width;i++){
+ const x=start+i*step,y=start+j*step;
+ let inside=false,dist=10;
+ for(let k=1;k<outline.length;k++){
+  const [a,b]=outline[k-1],[c,d]=outline[k],dx=c-a,dy=d-b;
+  if((b>y)!=(d>y)&&x<a+(y-b)*dx/dy)inside=!inside;
+  const t=Math.max(0,Math.min(1,((x-a)*dx+(y-b)*dy)/(dx*dx+dy*dy)));
+  dist=Math.min(dist,(x-a-t*dx)**2+(y-b-t*dy)**2);
+ }
+ section[j*width+i]=Math.sqrt(dist)*(inside?1:-1);
+}
+const soften=new Float32Array(section.length);
+for(let j=5;j<width-5;j++)for(let i=5;i<width-5;i++){
+ let sum=0,weight=0;
+ for(let a=-5;a<=5;a++)for(let b=-5;b<=5;b++){const w=Math.exp(-(a*a+b*b)/10);sum+=w*section[(j+a)*width+i+b];weight+=w;}
+ const index=j*width+i,value=section[index];
+ soften[index]=(sum/weight-value)*Math.max(0,Math.min(1,(value-.025)/.12));
+}
+for(let i=0;i<section.length;i++)section[i]=.20*(1-Math.exp(-Math.max(-2,(section[i]+soften[i])/.22)));
+const corners=[[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+const tets=[[0,1,2,6],[0,2,3,6],[0,3,7,6],[0,7,4,6],[0,4,5,6],[0,5,1,6]];
+const mesh=[];
+for(let k=0;k<depth-1;k++)for(let j=1;j<width-2;j++)for(let i=1;i<width-2;i++){
+ const values=corners.map(([a,b,c])=>section[(j+b)*width+i+a]-(zstart+(k+c)*step)**2);
+ if(values.every(v=>v>=0)||values.every(v=>v<0))continue;
+ const vertex=(a,b)=>{
+  const t=values[a]/(values[a]-values[b]),p=corners[a],q=corners[b];
+  const x=start+step*(i+p[0]+t*(q[0]-p[0])),y=start+step*(j+p[1]+t*(q[1]-p[1])),z=zstart+step*(k+p[2]+t*(q[2]-p[2]));
+  const gradient=(r)=>{const id=(j+corners[r][1])*width+i+corners[r][0];return [(section[id-1]-section[id+1])/(2*step),(section[id-width]-section[id+width])/(2*step)];};
+  const u=gradient(a),v=gradient(b),nx=u[0]+t*(v[0]-u[0]),ny=u[1]+t*(v[1]-u[1]),nz=2*z,l=Math.hypot(nx,ny,nz)||1;
+  return [x,y,z,nx/l,ny/l,nz/l];
+ };
+ for(const tet of tets){
+  const p=tet.filter(a=>values[a]>=0),q=tet.filter(a=>values[a]<0);
+  if(p.length===1)mesh.push(...vertex(p[0],q[0]),...vertex(p[0],q[1]),...vertex(p[0],q[2]));
+  if(q.length===1)mesh.push(...vertex(q[0],p[0]),...vertex(q[0],p[1]),...vertex(q[0],p[2]));
+  if(p.length===2){const a=vertex(p[0],q[0]),b=vertex(p[0],q[1]),c=vertex(p[1],q[0]),d=vertex(p[1],q[1]);mesh.push(...a,...b,...c,...b,...d,...c);}
+ }
+}
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh),gl.STATIC_DRAW);
+for(const [name,offset] of [['position',0],['normal',12]]){const at=gl.getAttribLocation(program,name);gl.enableVertexAttribArray(at);gl.vertexAttribPointer(at,3,gl.FLOAT,false,24,offset);}
+const texture=document.createElement('canvas');texture.width=512;texture.height=2048;
+const ctx=texture.getContext('2d');
+// Initial procedural fallback pattern
+ctx.fillStyle = '#ffffff';
+ctx.fillRect(0, 0, 512, 2048);
+
+// Mascot face on slice 0
+ctx.setTransform(204.8,0,0,-204.8,256,256);
+for(const x of [-.38,.38]){
+ const blush=ctx.createRadialGradient(x,.16,0,x,.16,.11);blush.addColorStop(0,'#f989adcb');blush.addColorStop(1,'#f989ad00');
+ ctx.beginPath();ctx.ellipse(x,.16,.11,.11,0,0,Math.PI*2);ctx.fillStyle=blush;ctx.fill();
+ ctx.beginPath();ctx.ellipse(x,.34,.061,.078,0,0,Math.PI*2);ctx.fillStyle='#243142';ctx.fill();
+ ctx.beginPath();ctx.ellipse(x-.019,.365,.017,.019,0,0,Math.PI*2);ctx.fillStyle='white';ctx.fill();
+}
+ctx.lineJoin='round';ctx.lineCap='round';
+const p=new Path2D('M-.16 .19 C-.1 .035 .1 .035 .16 .19');
+ctx.strokeStyle='#243142';ctx.lineWidth=0.025;ctx.stroke(p);
+
+// Cutaway drawing on slice 2
+ctx.setTransform(204.8,0,0,-204.8,256,1280);
+const dentin=ctx.createLinearGradient(0,0,.75,.25);dentin.addColorStop(0,'#d49c50');dentin.addColorStop(.35,'#f3c879');dentin.addColorStop(1,'#fff0b7');
+const p1=new Path2D('M0 .76 C.23 .72 .41 .93 .62 .79 C.85 .65 .75 .32 .65 .04 C.54 -.25 .53 -.85 .43 -1.00 C.35 -1.06 .33 -.62 .24 -.42 C.18 -.25 .06 -.21 0 -.22 Z');
+ctx.fillStyle=dentin;ctx.fill(p1);
+const p2=new Path2D('M0 .51 C.18 .50 .35 .63 .44 .48 C.54 .32 .40 .06 .39 -.22 C.37 -.53 .44 -.85 .43 -.99 C.37 -.91 .33 -.63 .29 -.39 C.21 -.14 .19 .07 0 .12 Z');
+ctx.fillStyle='#ed7899';ctx.fill(p2);
+
+const glTexture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, glTexture);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture);
+gl.generateMipmap(gl.TEXTURE_2D);
+
+// Load high-resolution master atlas image
+const atlasImg = new Image();
+atlasImg.crossOrigin = 'anonymous';
+atlasImg.onload = () => {
+  gl.bindTexture(gl.TEXTURE_2D, glTexture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasImg);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+};
+atlasImg.onerror = () => {
+  atlasImg.src = 'assets/images/tooth-texture-atlas.png';
+};
+atlasImg.src = 'images/tooth-texture-atlas.png';
+
+gl.enable(gl.DEPTH_TEST);
+const uniforms=Object.fromEntries(['angles','scale','mode'].map(name=>[name,gl.getUniformLocation(program,name)]));
+let yaw=.23,pitch=-.09,mode=1,orbit=!matchMedia('(prefers-reduced-motion: reduce)').matches,drag=null,last=0;
+const orbitButton=document.querySelector('#orbit');
+const setOrbit=value=>{orbit=value;orbitButton.setAttribute('aria-pressed',String(value));};
+setOrbit(orbit);orbitButton.onclick=()=>setOrbit(!orbit);
+document.querySelector('#reset').onclick=()=>{yaw=.23;pitch=-.09;setOrbit(false);};
+for(const button of document.querySelectorAll('[data-mode]'))button.onclick=()=>{
+ mode=Number(button.dataset.mode);yaw=mode===2?.22:.23;pitch=-.09;
+ if(mode===2)setOrbit(false);
+ for(const other of document.querySelectorAll('[data-mode]'))other.setAttribute('aria-pressed',String(other===button));
+};
+const tilt=value=>Math.max(-1.25,Math.min(1.25,value));
+canvas.onpointerdown=e=>{if(drag!==null)return;drag=e.pointerId;canvas.setPointerCapture(drag);setOrbit(false);};
+let pointerX,pointerY;
+canvas.addEventListener('pointerdown',e=>{pointerX=e.clientX;pointerY=e.clientY;});
+canvas.onpointermove=e=>{if(drag!==e.pointerId)return;yaw+=(e.clientX-pointerX)*.009;pitch=tilt(pitch+(e.clientY-pointerY)*.009);pointerX=e.clientX;pointerY=e.clientY;};
+canvas.onlostpointercapture=()=>{drag=null;};
+canvas.onkeydown=e=>{
+ const directions={ArrowLeft:[-.14,0],ArrowRight:[.14,0],ArrowUp:[0,-.14],ArrowDown:[0,.14]};
+ if(!directions[e.key])return;e.preventDefault();setOrbit(false);yaw+=directions[e.key][0];pitch=tilt(pitch+directions[e.key][1]);
+};
+function draw(time){
+ const dpr=Math.min(devicePixelRatio,2),w=Math.round(canvas.clientWidth*dpr),h=Math.round(canvas.clientHeight*dpr);
+ if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+ if(orbit&&last)yaw+=Math.min(time-last,40)*.00053;
+ last=time;
+ gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+ const unit=.79*Math.min(w,h);gl.uniform2f(uniforms.scale,unit/w,unit/h);
+ gl.uniform2f(uniforms.angles,yaw,pitch);gl.uniform1i(uniforms.mode,mode);
+ gl.drawArrays(gl.TRIANGLES,0,mesh.length/6);requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+// Embedded detection
+if (window.self !== window.top || location.search.includes('embedded=1')) {
+  document.body.classList.add('is-embedded');
+}
+
+// Global API for parent integration
+window.setToothMode = function(m) {
+  if (m === 'cute' || m === 'mascot') mode = 0;
+  else if (m === 'real' || m === 'natural' || m === 'anatomical') mode = 1;
+  else if (m === 'cutaway' || m === 'strata') mode = 2;
+  else if (m === 'kintsugi' || m === 'gold') mode = 3;
+  else mode = Number(m);
+  yaw = mode === 2 ? 0.22 : 0.23;
+  pitch = -0.09;
+  if (mode === 2) setOrbit(false);
+  for (const b of document.querySelectorAll('[data-mode]')) {
+    b.setAttribute('aria-pressed', String(Number(b.dataset.mode) === mode));
+  }
+};
+window.toggleToothOrbit = function() {
+  setOrbit(!orbit);
+  return orbit;
+};
+window.resetToothView = function() {
+  yaw = 0.23;
+  pitch = -0.09;
+  setOrbit(false);
+};
+window.setToothYaw = function(angleRad) {
+  yaw = angleRad;
+  setOrbit(false);
+};
+
+window.addEventListener('message', (e) => {
+  if (!e.data || typeof e.data !== 'object') return;
+  if (e.data.action === 'setMode') {
+    window.setToothMode(e.data.mode);
+  } else if (e.data.action === 'toggleOrbit') {
+    window.toggleToothOrbit();
+  } else if (e.data.action === 'setYaw') {
+    window.setToothYaw(e.data.yaw);
+  } else if (e.data.action === 'reset') {
+    window.resetToothView();
+  }
+});
+</script>
+</html>
