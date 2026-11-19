@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
-const ROOT = __dirname;
+const ROOT = path.resolve(__dirname, '..');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -58,20 +58,20 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      const chunksize = end - start + 1;
-      const fileStream = fs.createReadStream(filePath, { start, end });
       res.writeHead(206, {
         'Content-Range': `bytes ${start}-${end}/${stats.size}`,
         'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': contentType
+        'Content-Length': end - start + 1,
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*'
       });
-      fileStream.pipe(res);
+      fs.createReadStream(filePath, { start, end }).pipe(res);
     } else {
       res.writeHead(200, {
-        'Content-Length': stats.size,
         'Content-Type': contentType,
-        'Accept-Ranges': 'bytes'
+        'Content-Length': stats.size,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*'
       });
       fs.createReadStream(filePath).pipe(res);
     }
@@ -79,5 +79,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}/`);
+  console.log(`Server running at http://localhost:${PORT}/ (serving ${ROOT})`);
 });
