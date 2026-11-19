@@ -4,6 +4,7 @@
   "description": "IVORY — Where Precision Meets Perfection | Luxury Aesthetic Dental Studio Website Replica",
   "main": "server.js",
   "scripts": {
+    "build": "echo 'Static build ready'",
     "start": "node server.js",
     "dev": "node server.js"
   },
