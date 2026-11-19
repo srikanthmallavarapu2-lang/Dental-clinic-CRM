@@ -1,0 +1,19 @@
+{
+  "name": "ivory-dental-website",
+  "version": "1.0.0",
+  "description": "IVORY — Where Precision Meets Perfection | Luxury Aesthetic Dental Studio Website Replica",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "dental",
+    "luxury",
+    "aesthetic-dentistry",
+    "ivory",
+    "gsap"
+  ],
+  "author": "",
+  "license": "ISC"
+}
